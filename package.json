@@ -1,0 +1,29 @@
+{
+  "name": "coupling",
+  "version": "1.0.0",
+  "description": "Coupling - Student project matching platform",
+  "main": "server/index.js",
+  "type": "module",
+  "scripts": {
+    "server": "node server/index.js",
+    "client": "cd client && npm run dev",
+    "dev": "concurrently \"npm run server\" \"npm run client\"",
+    "build": "cd client && npm run build",
+    "install:all": "npm install && cd client && npm install",
+    "seed": "node server/seed.js"
+  },
+  "keywords": ["matching", "students", "projects"],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.18.2",
+    "cors": "^2.8.5",
+    "bcrypt": "^5.1.1",
+    "jsonwebtoken": "^9.0.2",
+    "better-sqlite3": "^9.2.2",
+    "dotenv": "^16.3.1"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}
