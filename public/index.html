@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Coupling - Connect, Collaborate, Create</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="theme-toggle">
+        <button id="themeToggle" aria-label="Toggle theme">
+            <span class="theme-icon">🌙</span>
+        </button>
+    </div>
+
+    <div class="landing-container">
+        <div class="landing-content">
+            <div class="logo-section">
+                <h1 class="logo">Coupling</h1>
+                <p class="tagline">Connect ambitious minds, build the future</p>
+            </div>
+
+            <div class="feature-cards">
+                <div class="feature-card">
+                    <div class="feature-icon">💡</div>
+                    <h3>Have an Idea?</h3>
+                    <p>Find talented engineers to bring your vision to life</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">⚙️</div>
+                    <h3>Technical Skills?</h3>
+                    <p>Discover exciting projects and build your portfolio</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">🤝</div>
+                    <h3>Collaborate</h3>
+                    <p>Match with like-minded students and create together</p>
+                </div>
+            </div>
+
+            <div class="auth-section">
+                <h2>Get Started</h2>
+                <form id="signinForm" class="auth-form">
+                    <div class="form-group">
+                        <input type="email" id="email" placeholder="Email" required>
+                    </div>
+                    <div class="form-group">
+                        <input type="password" id="password" placeholder="Password" required>
+                    </div>
+                    <button type="submit" class="btn btn-primary">Sign In</button>
+                    <div class="error-message" id="errorMessage"></div>
+                </form>
+                <p class="auth-switch">
+                    Don't have an account? <a href="/signup">Sign Up</a>
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <script src="auth.js"></script>
+</body>
+</html>
