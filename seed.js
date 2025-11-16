@@ -1,50 +1,90 @@
-const Database = require('better-sqlite3');
+const initSqlJs = require('sql.js');
 const bcrypt = require('bcryptjs');
+const fs = require('fs');
 
-const db = new Database('coupling.db');
+let db;
 
-// Create tables if they don't exist
-db.exec(`
-  CREATE TABLE IF NOT EXISTS users (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    email TEXT UNIQUE NOT NULL,
-    password TEXT NOT NULL,
-    name TEXT NOT NULL,
-    country TEXT NOT NULL,
-    university TEXT NOT NULL,
-    user_type TEXT NOT NULL,
-    bio TEXT,
-    skills TEXT,
-    equity_offer TEXT,
-    project_idea TEXT,
-    timeline TEXT,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  );
+async function initDatabase() {
+  const SQL = await initSqlJs();
 
-  CREATE TABLE IF NOT EXISTS matches (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER NOT NULL,
-    matched_user_id INTEGER NOT NULL,
-    status TEXT DEFAULT 'pending',
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (user_id) REFERENCES users(id),
-    FOREIGN KEY (matched_user_id) REFERENCES users(id),
-    UNIQUE(user_id, matched_user_id)
-  );
+  // Load existing database or create new one
+  let buffer;
+  if (fs.existsSync('coupling.db')) {
+    buffer = fs.readFileSync('coupling.db');
+  }
 
-  CREATE TABLE IF NOT EXISTS swipes (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    swiper_id INTEGER NOT NULL,
-    swiped_id INTEGER NOT NULL,
-    direction TEXT NOT NULL,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (swiper_id) REFERENCES users(id),
-    FOREIGN KEY (swiped_id) REFERENCES users(id),
-    UNIQUE(swiper_id, swiped_id)
-  );
-`);
+  db = new SQL.Database(buffer);
+
+  // Create tables if they don't exist
+  db.run(`
+    CREATE TABLE IF NOT EXISTS users (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      email TEXT UNIQUE NOT NULL,
+      password TEXT NOT NULL,
+      name TEXT NOT NULL,
+      country TEXT NOT NULL,
+      university TEXT NOT NULL,
+      user_type TEXT NOT NULL,
+      bio TEXT,
+      skills TEXT,
+      equity_offer TEXT,
+      project_idea TEXT,
+      timeline TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS matches (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      matched_user_id INTEGER NOT NULL,
+      status TEXT DEFAULT 'pending',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES users(id),
+      FOREIGN KEY (matched_user_id) REFERENCES users(id),
+      UNIQUE(user_id, matched_user_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS swipes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      swiper_id INTEGER NOT NULL,
+      swiped_id INTEGER NOT NULL,
+      direction TEXT NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (swiper_id) REFERENCES users(id),
+      FOREIGN KEY (swiped_id) REFERENCES users(id),
+      UNIQUE(swiper_id, swiped_id)
+    );
+  `);
+
+  saveDatabase();
+}
+
+function saveDatabase() {
+  const data = db.export();
+  const buffer = Buffer.from(data);
+  fs.writeFileSync('coupling.db', buffer);
+}
+
+function prepare(query) {
+  return {
+    run: (...params) => {
+      try {
+        const stmt = db.prepare(query);
+        stmt.bind(params);
+        stmt.step();
+        stmt.free();
+        saveDatabase();
+        return { success: true };
+      } catch (error) {
+        throw error;
+      }
+    }
+  };
+}
 
 async function seedDatabase() {
+    await initDatabase();
+
     const hashedPassword = await bcrypt.hash('password123', 10);
 
     const technicalUsers = [
@@ -198,14 +238,14 @@ async function seedDatabase() {
     ];
 
     console.log('Seeding technical users...');
-    const technicalStmt = db.prepare(`
-        INSERT INTO users (email, password, name, country, university, user_type, bio, skills, equity_offer, project_idea, timeline)
-        VALUES (?, ?, ?, ?, ?, 'technical', ?, ?, '', '', '')
-    `);
 
     for (const user of technicalUsers) {
         try {
-            technicalStmt.run(user.email, hashedPassword, user.name, user.country, user.university, user.bio, user.skills);
+            const stmt = prepare(`
+                INSERT INTO users (email, password, name, country, university, user_type, bio, skills, equity_offer, project_idea, timeline)
+                VALUES (?, ?, ?, ?, ?, 'technical', ?, ?, '', '', '')
+            `);
+            stmt.run(user.email, hashedPassword, user.name, user.country, user.university, user.bio, user.skills);
             console.log(`✓ Created: ${user.name}`);
         } catch (error) {
             console.log(`✗ Skipped: ${user.name} (already exists)`);
@@ -213,14 +253,14 @@ async function seedDatabase() {
     }
 
     console.log('\nSeeding non-technical users...');
-    const nonTechnicalStmt = db.prepare(`
-        INSERT INTO users (email, password, name, country, university, user_type, bio, skills, equity_offer, project_idea, timeline)
-        VALUES (?, ?, ?, ?, ?, 'non-technical', ?, '', ?, ?, ?)
-    `);
 
     for (const user of nonTechnicalUsers) {
         try {
-            nonTechnicalStmt.run(user.email, hashedPassword, user.name, user.country, user.university, user.bio, user.equityOffer, user.projectIdea, user.timeline);
+            const stmt = prepare(`
+                INSERT INTO users (email, password, name, country, university, user_type, bio, skills, equity_offer, project_idea, timeline)
+                VALUES (?, ?, ?, ?, ?, 'non-technical', ?, '', ?, ?, ?)
+            `);
+            stmt.run(user.email, hashedPassword, user.name, user.country, user.university, user.bio, user.equityOffer, user.projectIdea, user.timeline);
             console.log(`✓ Created: ${user.name}`);
         } catch (error) {
             console.log(`✗ Skipped: ${user.name} (already exists)`);
@@ -229,6 +269,8 @@ async function seedDatabase() {
 
     console.log('\n✅ Database seeding complete!');
     console.log('All users can login with password: password123');
+
+    db.close();
 }
 
-seedDatabase().catch(console.error).finally(() => db.close());
+seedDatabase().catch(console.error);

@@ -15,7 +15,7 @@ A modern platform connecting technical and non-technical students for project co
 
 - **Frontend**: HTML, CSS, JavaScript
 - **Backend**: Node.js, Express
-- **Database**: SQLite (better-sqlite3)
+- **Database**: SQLite (sql.js - pure JavaScript, no compilation needed)
 - **Authentication**: bcryptjs, express-session
 
 ## Getting Started

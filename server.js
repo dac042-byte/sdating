@@ -3,54 +3,108 @@ const session = require('express-session');
 const bodyParser = require('body-parser');
 const path = require('path');
 const bcrypt = require('bcryptjs');
-const Database = require('better-sqlite3');
+const fs = require('fs');
+const initSqlJs = require('sql.js');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+let db;
+
 // Initialize database
-const db = new Database('coupling.db');
+async function initDatabase() {
+  const SQL = await initSqlJs();
 
-// Create tables
-db.exec(`
-  CREATE TABLE IF NOT EXISTS users (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    email TEXT UNIQUE NOT NULL,
-    password TEXT NOT NULL,
-    name TEXT NOT NULL,
-    country TEXT NOT NULL,
-    university TEXT NOT NULL,
-    user_type TEXT NOT NULL,
-    bio TEXT,
-    skills TEXT,
-    equity_offer TEXT,
-    project_idea TEXT,
-    timeline TEXT,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  );
+  // Load existing database or create new one
+  let buffer;
+  if (fs.existsSync('coupling.db')) {
+    buffer = fs.readFileSync('coupling.db');
+  }
 
-  CREATE TABLE IF NOT EXISTS matches (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER NOT NULL,
-    matched_user_id INTEGER NOT NULL,
-    status TEXT DEFAULT 'pending',
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (user_id) REFERENCES users(id),
-    FOREIGN KEY (matched_user_id) REFERENCES users(id),
-    UNIQUE(user_id, matched_user_id)
-  );
+  db = new SQL.Database(buffer);
 
-  CREATE TABLE IF NOT EXISTS swipes (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    swiper_id INTEGER NOT NULL,
-    swiped_id INTEGER NOT NULL,
-    direction TEXT NOT NULL,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (swiper_id) REFERENCES users(id),
-    FOREIGN KEY (swiped_id) REFERENCES users(id),
-    UNIQUE(swiper_id, swiped_id)
-  );
-`);
+  // Create tables
+  db.run(`
+    CREATE TABLE IF NOT EXISTS users (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      email TEXT UNIQUE NOT NULL,
+      password TEXT NOT NULL,
+      name TEXT NOT NULL,
+      country TEXT NOT NULL,
+      university TEXT NOT NULL,
+      user_type TEXT NOT NULL,
+      bio TEXT,
+      skills TEXT,
+      equity_offer TEXT,
+      project_idea TEXT,
+      timeline TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS matches (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      matched_user_id INTEGER NOT NULL,
+      status TEXT DEFAULT 'pending',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES users(id),
+      FOREIGN KEY (matched_user_id) REFERENCES users(id),
+      UNIQUE(user_id, matched_user_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS swipes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      swiper_id INTEGER NOT NULL,
+      swiped_id INTEGER NOT NULL,
+      direction TEXT NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (swiper_id) REFERENCES users(id),
+      FOREIGN KEY (swiped_id) REFERENCES users(id),
+      UNIQUE(swiper_id, swiped_id)
+    );
+  `);
+
+  saveDatabase();
+}
+
+// Save database to file
+function saveDatabase() {
+  const data = db.export();
+  const buffer = Buffer.from(data);
+  fs.writeFileSync('coupling.db', buffer);
+}
+
+// Helper functions to mimic better-sqlite3 API
+function prepare(query) {
+  return {
+    run: (...params) => {
+      const stmt = db.prepare(query);
+      stmt.bind(params);
+      stmt.step();
+      const lastId = db.exec('SELECT last_insert_rowid() as id')[0]?.values[0]?.[0];
+      stmt.free();
+      saveDatabase();
+      return { lastInsertRowid: lastId };
+    },
+    get: (...params) => {
+      const stmt = db.prepare(query);
+      stmt.bind(params);
+      const result = stmt.step() ? stmt.getAsObject() : null;
+      stmt.free();
+      return result;
+    },
+    all: (...params) => {
+      const stmt = db.prepare(query);
+      stmt.bind(params);
+      const results = [];
+      while (stmt.step()) {
+        results.push(stmt.getAsObject());
+      }
+      stmt.free();
+      return results;
+    }
+  };
+}
 
 // Middleware
 app.use(bodyParser.json());
@@ -82,7 +136,7 @@ app.post('/api/signup', async (req, res) => {
 
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    const stmt = db.prepare(`
+    const stmt = prepare(`
       INSERT INTO users (email, password, name, country, university, user_type, bio, skills, equity_offer, project_idea, timeline)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
@@ -101,7 +155,7 @@ app.post('/api/signin', async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    const stmt = db.prepare('SELECT * FROM users WHERE email = ?');
+    const stmt = prepare('SELECT * FROM users WHERE email = ?');
     const user = stmt.get(email);
 
     if (!user) {
@@ -128,7 +182,7 @@ app.post('/api/signout', (req, res) => {
 });
 
 app.get('/api/me', requireAuth, (req, res) => {
-  const stmt = db.prepare('SELECT id, email, name, country, university, user_type, bio, skills, equity_offer, project_idea, timeline FROM users WHERE id = ?');
+  const stmt = prepare('SELECT id, email, name, country, university, user_type, bio, skills, equity_offer, project_idea, timeline FROM users WHERE id = ?');
   const user = stmt.get(req.session.userId);
   res.json(user);
 });
@@ -138,11 +192,11 @@ app.get('/api/potential-matches', requireAuth, (req, res) => {
     const userId = req.session.userId;
 
     // Get user's type
-    const userStmt = db.prepare('SELECT user_type FROM users WHERE id = ?');
+    const userStmt = prepare('SELECT user_type FROM users WHERE id = ?');
     const currentUser = userStmt.get(userId);
 
     // Get users already swiped on
-    const swipedStmt = db.prepare('SELECT swiped_id FROM swipes WHERE swiper_id = ?');
+    const swipedStmt = prepare('SELECT swiped_id FROM swipes WHERE swiper_id = ?');
     const swipedUsers = swipedStmt.all(userId).map(s => s.swiped_id);
 
     // Get potential matches (opposite user type, not already swiped)
@@ -160,7 +214,7 @@ app.get('/api/potential-matches', requireAuth, (req, res) => {
 
     query += ' ORDER BY RANDOM() LIMIT 10';
 
-    const stmt = db.prepare(query);
+    const stmt = prepare(query);
     const matches = stmt.all(oppositeType, userId);
 
     res.json(matches);
@@ -176,17 +230,17 @@ app.post('/api/swipe', requireAuth, (req, res) => {
     const swiperId = req.session.userId;
 
     // Record the swipe
-    const swipeStmt = db.prepare('INSERT INTO swipes (swiper_id, swiped_id, direction) VALUES (?, ?, ?)');
+    const swipeStmt = prepare('INSERT INTO swipes (swiper_id, swiped_id, direction) VALUES (?, ?, ?)');
     swipeStmt.run(swiperId, swipedUserId, direction);
 
     // Check if it's a match (both users swiped right on each other)
     if (direction === 'right') {
-      const matchCheckStmt = db.prepare('SELECT * FROM swipes WHERE swiper_id = ? AND swiped_id = ? AND direction = "right"');
+      const matchCheckStmt = prepare('SELECT * FROM swipes WHERE swiper_id = ? AND swiped_id = ? AND direction = "right"');
       const reciprocalSwipe = matchCheckStmt.get(swipedUserId, swiperId);
 
       if (reciprocalSwipe) {
         // Create a match!
-        const matchStmt = db.prepare('INSERT OR IGNORE INTO matches (user_id, matched_user_id, status) VALUES (?, ?, "matched")');
+        const matchStmt = prepare('INSERT OR IGNORE INTO matches (user_id, matched_user_id, status) VALUES (?, ?, "matched")');
         matchStmt.run(swiperId, swipedUserId);
         matchStmt.run(swipedUserId, swiperId);
 
@@ -205,7 +259,7 @@ app.get('/api/matches', requireAuth, (req, res) => {
   try {
     const userId = req.session.userId;
 
-    const stmt = db.prepare(`
+    const stmt = prepare(`
       SELECT u.id, u.name, u.email, u.country, u.university, u.user_type, u.bio, u.skills, u.equity_offer, u.project_idea, u.timeline
       FROM matches m
       JOIN users u ON m.matched_user_id = u.id
@@ -238,6 +292,12 @@ app.get('/app', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'app.html'));
 });
 
-app.listen(PORT, () => {
-  console.log(`Coupling server running on http://localhost:${PORT}`);
+// Start server after database is initialized
+initDatabase().then(() => {
+  app.listen(PORT, () => {
+    console.log(`Coupling server running on http://localhost:${PORT}`);
+  });
+}).catch(error => {
+  console.error('Failed to initialize database:', error);
+  process.exit(1);
 });
